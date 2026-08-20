@@ -1,6 +1,51 @@
 github:
   branch_name: main
   tooling_branch_name: main
+
+# The recipe is recipe/recipe.yaml, not recipe/meta.yaml.
+conda_build_tool: rattler-build
+
 conda_build:
   error_overlinking: true
 conda_forge_output_validation: true
+
+# Linux only.
+#
+# The compiled output exists for CUDA, which is a Linux story here: the recipe
+# builds the extension against the CUDA toolkit and has never been exercised on
+# Windows.  The other three outputs are `noarch`, so they build once and a
+# second platform would add nothing.
+#
+# Left to the defaults, the re-render put the CUDA matrix on win_64 and gave
+# linux `cuda_compiler_version: [None]` -- the exact inverse of what this recipe
+# wants.
+provider:
+  linux_64: azure
+  osx_64: false
+  osx_arm64: false
+  win_64: false
+
+# The whole variant matrix runs in a single CI job, and it does not fit in the
+# ~21 GB an Azure hosted agent leaves free on `/`.
+#
+# conda-smithy distributes CI jobs over the *intersection* of each output's loop
+# variables.  The pure-Python output is `noarch` and pins `python_min`, so it
+# loops over nothing at all; intersecting that with the CUDA output's `python`
+# leaves the empty set, and every variant lands in one `linux_64_` job.
+#
+# That job's package cache has to hold, at once:
+#
+#   ~9 GB   the CUDA 12.9 stack the `-cuda` outputs build against
+#           (libtorch, libcudnn, libcublas, libmagma, nccl, ...)
+#   ~7 GB   a *second*, distinct CUDA 12.6 stack -- the run dependencies of
+#           groundingdino-py solve to pytorch 2.6/cuda126 in the test
+#           environment, sharing nothing with the above
+#   ~5 GB   the alma10 build image
+#
+# Both `quick` and `max` delete the agent's preinstalled Android SDK, .NET, GHC,
+# Swift, JVM, PowerShell and hosted tool cache, which is the bulk of the ~25 GB
+# reclaimed.  `max` additionally prunes the six docker images the agent ships
+# with, and is chosen because that prune runs before the alma10 image is pulled
+# and so costs nothing this build needs.
+workflow_settings:
+  free_disk_space: max

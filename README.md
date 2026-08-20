@@ -3,21 +3,53 @@ About groundingdino-py-feedstock
 
 Feedstock license: [BSD-3-Clause](https://github.com/conda-forge/groundingdino-py-feedstock/blob/main/LICENSE.txt)
 
-Home: https://github.com/giswqs/GroundingDINO
+Home: https://github.com/IDEA-Research/GroundingDINO
 
 Package license: Apache-2.0
 
-Summary: open-set object detector
+Summary: Open-set object detector
+
+Development: https://github.com/IDEA-Research/GroundingDINO
+
+GroundingDINO marries DINO with grounded pre-training for open-set object
+detection: it detects objects named by a free-form text prompt rather than
+by a fixed label set.
+
+This feedstock publishes the project as several packages.  The Python is
+identical across all of them; they differ only in whether the
+`groundingdino._C` deformable-attention extension is present.  Without it
+the model runs the pure-PyTorch implementation, which is correct but
+substantially slower, and requires float32 -- `F.grid_sample` has no
+half-precision CPU kernel.
 
 Current build status
 ====================
 
 
-<table><tr><td>All platforms:</td>
+<table>
+    
+  <tr>
+    <td>Azure</td>
     <td>
-      <a href="https://dev.azure.com/conda-forge/feedstock-builds/_build/latest?definitionId=19795&branchName=main">
-        <img src="https://dev.azure.com/conda-forge/feedstock-builds/_apis/build/status/groundingdino-py-feedstock?branchName=main">
-      </a>
+      <details>
+        <summary>
+          <a href="https://dev.azure.com/conda-forge/feedstock-builds/_build/latest?definitionId=19795&branchName=main">
+            <img src="https://dev.azure.com/conda-forge/feedstock-builds/_apis/build/status/groundingdino-py-feedstock?branchName=main">
+          </a>
+        </summary>
+        <table>
+          <thead><tr><th>Variant</th><th>Status</th></tr></thead>
+          <tbody><tr>
+              <td>linux_64</td>
+              <td>
+                <a href="https://dev.azure.com/conda-forge/feedstock-builds/_build/latest?definitionId=19795&branchName=main">
+                  <img src="https://dev.azure.com/conda-forge/feedstock-builds/_apis/build/status/groundingdino-py-feedstock?branchName=main&jobName=linux&configuration=linux%20linux_64_" alt="variant">
+                </a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </details>
     </td>
   </tr>
 </table>
@@ -28,6 +60,7 @@ Current release info
 | Name | Downloads | Version | Platforms |
 | --- | --- | --- | --- |
 | [![Conda Recipe](https://img.shields.io/badge/recipe-groundingdino--py-green.svg)](https://anaconda.org/conda-forge/groundingdino-py) | [![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/groundingdino-py.svg)](https://anaconda.org/conda-forge/groundingdino-py) | [![Conda Version](https://img.shields.io/conda/vn/conda-forge/groundingdino-py.svg)](https://anaconda.org/conda-forge/groundingdino-py) | [![Conda Platforms](https://img.shields.io/conda/pn/conda-forge/groundingdino-py.svg)](https://anaconda.org/conda-forge/groundingdino-py) |
+| [![Conda Recipe](https://img.shields.io/badge/recipe-groundingdino--py--cuda-green.svg)](https://anaconda.org/conda-forge/groundingdino-py-cuda) | [![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/groundingdino-py-cuda.svg)](https://anaconda.org/conda-forge/groundingdino-py-cuda) | [![Conda Version](https://img.shields.io/conda/vn/conda-forge/groundingdino-py-cuda.svg)](https://anaconda.org/conda-forge/groundingdino-py-cuda) | [![Conda Platforms](https://img.shields.io/conda/pn/conda-forge/groundingdino-py-cuda.svg)](https://anaconda.org/conda-forge/groundingdino-py-cuda) |
 
 Installing groundingdino-py
 ===========================
@@ -39,31 +72,73 @@ conda config --add channels conda-forge
 conda config --set channel_priority strict
 ```
 
-Once the `conda-forge` channel has been enabled, `groundingdino-py` can be installed with `conda`:
+How to use
+----------
+
+<details>
+<summary>With conda</summary>
 
 ```
-conda install groundingdino-py
+conda install groundingdino-py groundingdino-py-cuda
 ```
 
-or with `mamba`:
+</details>
+
+<details>
+<summary>With mamba</summary>
 
 ```
-mamba install groundingdino-py
+mamba install groundingdino-py groundingdino-py-cuda
 ```
 
-It is possible to list all of the versions of `groundingdino-py` available on your platform with `conda`:
+</details>
+
+<details>
+<summary>With pixi</summary>
+
+```
+# for adding to your local project
+pixi add groundingdino-py groundingdino-py-cuda
+# for installing globally
+pixi global install groundingdino-py groundingdino-py-cuda
+```
+
+</details>
+
+Search package versions
+-----------------------
+
+It is possible to list all of the versions of `groundingdino-py` available on your platform:
+
+<details>
+<summary>With conda</summary>
 
 ```
 conda search groundingdino-py --channel conda-forge
 ```
 
-or with `mamba`:
+</details>
+
+<details>
+<summary>With mamba</summary>
 
 ```
 mamba search groundingdino-py --channel conda-forge
 ```
 
-Alternatively, `mamba repoquery` may provide more information:
+</details>
+
+<details>
+<summary>With pixi</summary>
+
+```
+pixi search groundingdino-py --channel conda-forge
+```
+
+</details>
+
+<details>
+<summary>With mamba repoquery, which may provide more information</summary>
 
 ```
 # Search all versions available on your platform:
@@ -75,6 +150,8 @@ mamba repoquery whoneeds groundingdino-py --channel conda-forge
 # List dependencies of `groundingdino-py`:
 mamba repoquery depends groundingdino-py --channel conda-forge
 ```
+
+</details>
 
 
 About conda-forge
@@ -95,15 +172,15 @@ available continuous integration services. Thanks to the awesome service provide
 [CircleCI](https://circleci.com/), [AppVeyor](https://www.appveyor.com/),
 [Drone](https://cloud.drone.io/welcome), and [TravisCI](https://travis-ci.com/)
 it is possible to build and upload installable packages to the
-[conda-forge](https://anaconda.org/conda-forge) [Anaconda-Cloud](https://anaconda.org/)
+[conda-forge](https://anaconda.org/conda-forge) [anaconda.org](https://anaconda.org/)
 channel for Linux, Windows and OSX respectively.
 
-To manage the continuous integration and simplify feedstock maintenance
+To manage the continuous integration and simplify feedstock maintenance,
 [conda-smithy](https://github.com/conda-forge/conda-smithy) has been developed.
 Using the ``conda-forge.yml`` within this repository, it is possible to re-render all of
 this feedstock's supporting files (e.g. the CI configuration files) with ``conda smithy rerender``.
 
-For more information please check the [conda-forge documentation](https://conda-forge.org/docs/).
+For more information, please check the [conda-forge documentation](https://conda-forge.org/docs/).
 
 Terminology
 ===========
@@ -130,7 +207,7 @@ merged, the recipe will be re-built and uploaded automatically to the
 everybody to install and use from the `conda-forge` channel.
 Note that all branches in the conda-forge/groundingdino-py-feedstock are
 immediately built and any created packages are uploaded, so PRs should be based
-on branches in forks and branches in the main repository should only be used to
+on branches in forks, and branches in the main repository should only be used to
 build distinct package versions.
 
 In order to produce a uniquely identifiable distribution:
@@ -144,4 +221,5 @@ Feedstock Maintainers
 =====================
 
 * [@giswqs](https://github.com/giswqs/)
+* [@phreed](https://github.com/phreed/)
 

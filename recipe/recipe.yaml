@@ -1,0 +1,257 @@
+schema_version: 1
+
+# GroundingDINO, built as a multi-output recipe for rattler-build.
+#
+# The package splits along the one axis that actually exists in the source:
+# whether the `groundingdino._C` deformable-attention extension is compiled.
+#
+#   groundingdino-py        the package.  Pure Python, no extension.  Imports
+#                           fine everywhere; ms_deform_attn.py guards
+#                           `from groundingdino import _C` in a try/except and
+#                           falls back to multi_scale_deformable_attn_pytorch.
+#   groundingdino-py-cuda   the CUDA-compiled `_C` alone, one file, depending on
+#                           the package above.
+#
+# Two outputs, not four.  An earlier draft had a `-base` holding the Python with
+# `groundingdino-py` an empty metapackage in front of it, plus a `-cpu`
+# metapackage differing from that only by a constraint keeping `-cuda` out.
+#
+# Neither earned its place.  The indirection bought nothing that naming the
+# Python package `groundingdino-py` does not, and `-cpu` guarded against
+# something that cannot happen by accident: `-cuda` is opt-in, so nothing pulls
+# it in unasked.  Not installing it is how you do not install it.
+#
+# There is deliberately no rocm or vulkan output.  See the note at the foot of
+# this file: neither backend exists in the source to build against.
+
+context:
+  name: groundingdino-py
+  version: "0.4.1"
+  # Upstream's own tree, not the PyPI sdist.
+  # The sdist ships no `csrc/`,
+  # so the CUDA extension cannot be built from it at all --
+  # which is why the primary package is pure Python
+  # and why anyone wanting the compiled kernel has had to build it themselves.
+  #
+  # Upstream has cut no release since this commit;
+  # it is `main` at the time of writing, pinned by hash.
+  commit: 856dde20aee659246248e20734ef9ba5214f5e44
+  # Architectures the extension is compiled for ahead of time.  conda-forge's
+  # builders have no GPU, so nothing may depend on torch.cuda.is_available().
+  cuda_arch_list: "8.0;8.6;8.9"
+
+recipe:
+  name: groundingdino-py-split
+  version: ${{ version }}
+
+source:
+  - url: https://github.com/IDEA-Research/GroundingDINO/archive/${{ commit }}.tar.gz
+    sha256: 37b98b28341f95d1283631570c56b5ed3c92ea4af9717045f55f5045ca6fb2a0
+    # Fixes submitted upstream and not yet merged.  Carried here rather than
+    # waiting, because two of the three are load-bearing for this feedstock:
+    # without 0002 the CUDA extension does not compile under CUDA 12 at all, and
+    # without 0003 there is no version for packaging to read.  Drop each patch as
+    # its pull request lands.
+    #
+    #   0001  IDEA-Research/GroundingDINO#458  transformers >= 4.49 compatibility
+    #   0002  IDEA-Research/GroundingDINO#459  cuda_fp16.h include, fixes CUDA 12
+    #   0003  IDEA-Research/GroundingDINO#460  __version__ attribute
+    #   0004  IDEA-Research/GroundingDINO#462  Tensor::type() is deprecated and
+    #                                          no longer converts, so the kernel
+    #                                          does not compile under CUDA 12.9
+    #
+    # IDEA-Research/GroundingDINO#461 is deliberately *not* carried.  It extends
+    # the SwinB config with training parameters, which is a proposal rather than
+    # a fix, and no consumer of this package needs it: the configs are read from
+    # disk by path, so a project wanting tuned ones ships its own.
+    patches:
+      - patches/0001-transformers-api-compat.patch
+      - patches/0002-cuda-fp16-include.patch
+      - patches/0003-version-attribute.patch
+      - patches/0004-aten-deprecated-type.patch
+
+build:
+  # The recipe-wide build number.  Each output may override it; none do, so
+  # bumping here bumps all of them together, which is what a rebuild against new
+  # pinnings wants.
+  number: 0
+
+outputs:
+
+  # ── Pure Python ─────────────────────────────────────────────────────────────
+  # Everything except the compiled extension.  `noarch: python` is correct here
+  # precisely because the arch-dependent part is factored into the cuda output.
+  - package:
+      name: ${{ name }}
+      version: ${{ version }}
+
+    build:
+      noarch: python
+      number: 0
+      script:
+        # No compiler and no TORCH_CUDA_ARCH_LIST in this environment, so
+        # setup.py's get_extensions() takes its else branch and returns None.
+        # The wheel that results is pure Python -- which is what `noarch`
+        # asserts, so the two have to stay in step.
+        content:
+          - python -m pip install . --no-deps --no-build-isolation -vv
+
+    requirements:
+      host:
+        - python ${{ python_min }}.*
+        - pip
+        - setuptools
+        - wheel
+        # setup.py does `import torch` at module level -- and, failing that,
+        # tries to pip-install it, which cannot work in a sandboxed build.  It
+        # is needed to read the metadata even though this output compiles
+        # nothing.
+        - pytorch >=2.1.0
+      run:
+        - python >=${{ python_min }}
+        - pytorch >=2.1.0
+        - torchvision
+        - numpy >=1.26.2
+        - opencv
+        - supervision >=0.22.0
+        - pycocotools
+        - transformers >=4.49.0
+        - addict
+        - yapf
+        - timm
+
+    tests:
+      - python:
+          imports:
+            - groundingdino
+            - groundingdino.util.inference
+          python_version: ${{ python_min }}.*
+      - script:
+          # The fallback is the contract of this output: importing the model
+          # code must not require the extension.
+          - python -c "from groundingdino.models.GroundingDINO.ms_deform_attn import multi_scale_deformable_attn_pytorch"
+
+  # ── CUDA extension ──────────────────────────────────────────────────────────
+  # Ships only `groundingdino/_C*.so`; the Python lives in the base output.
+  # Two packages may populate the same site-packages directory as long as they
+  # do not claim the same file.
+  - package:
+      name: groundingdino-py-cuda
+      version: ${{ version }}
+
+    build:
+      number: 0
+      string: cuda${{ cuda_compiler_version | default("None") | replace(".", "") }}_py${{ python | replace(".", "") }}_h${{ hash }}_${{ build_number }}
+      skip:
+        # `undefined` and `"None"` both mean "no CUDA on this platform", and they
+        # are not interchangeable: conda-forge's pinning omits the key entirely
+        # for osx, so testing only against "None" lets the output through and the
+        # template below fails during output discovery, before skip is consulted.
+        - cuda_compiler_version is undefined or cuda_compiler_version == "None"
+        - match(python, "<3.10")
+      script:
+        content:
+          # CUDA_HOME has to be exported from the script rather than declared in
+          # `env:` below, because only here does $BUILD_PREFIX expand.  It must
+          # point at the prefix holding bin/nvcc: torch resolves its own
+          # CUDA_HOME from this and silently falls back to a no-extension build
+          # when it cannot find the compiler, which produces a py3-none-any
+          # wheel rather than an error.
+          - export CUDA_HOME="${BUILD_PREFIX}"
+          - echo "CUDA_HOME=$CUDA_HOME"
+          - ls -l "$CUDA_HOME/bin/nvcc"
+          - python -c "import torch; print('torch', torch.__version__, 'built against CUDA', torch.version.cuda)"
+          - python -c "from torch.utils.cpp_extension import CUDA_HOME; print('torch sees CUDA_HOME:', CUDA_HOME); assert CUDA_HOME, 'torch found no CUDA toolkit'"
+          - python -m pip install . --no-deps --no-build-isolation -vv
+          # Keep the extension, discard the Python that groundingdino-py-base
+          # already owns.  Without this the two outputs collide on every .py.
+          - python "$RECIPE_DIR/prune_to_extension.py" "$SP_DIR"
+        env:
+          # Compiled ahead of time.  setup.py takes its CUDA branch when
+          # TORCH_CUDA_ARCH_LIST is set even though no GPU is present, which is
+          # what makes this buildable on GPU-less CI at all.
+          FORCE_CUDA: "1"
+          TORCH_CUDA_ARCH_LIST: ${{ cuda_arch_list }}
+
+    requirements:
+      build:
+        - ${{ compiler('c') }}
+        - ${{ stdlib('c') }}
+        - ${{ compiler('cxx') }}
+        - ${{ compiler('cuda') }}
+        - ninja
+      host:
+        - python
+        - pip
+        - setuptools
+        - wheel
+        # The CUDA build specifically.  A CPU-built pytorch reports
+        # torch.version.cuda == None, and torch then discards CUDA_HOME however
+        # the environment is set -- so setup.py takes its no-extension branch
+        # and quietly produces a py3-none-any wheel.
+        - pytorch >=2.1.0 *cuda*
+        - cuda-version ==${{ cuda_compiler_version | default("None") }}
+        # torch's own CUDA headers include cusparse.h, cublas, cusolver and
+        # curand transitively, so building any extension against them needs the
+        # development packages present even though this kernel calls none of
+        # them directly.  SelectiveTracking's pixi.toml had already accumulated
+        # exactly this list.
+        - cuda-cudart-dev
+        - libcublas-dev
+        - libcusparse-dev
+        - libcusolver-dev
+        - libcurand-dev
+      run:
+        - python
+        - ${{ pin_subpackage(name, exact=False) }}
+        - pytorch >=2.1.0 *cuda*
+      run_constraints:
+        - __cuda >=12.0
+
+    tests:
+      - script:
+          # An import test would need a GPU; checking the object exists and
+          # carries its entry points does not.
+          - python -c "import groundingdino, pathlib, glob, sys; p = pathlib.Path(groundingdino.__file__).parent; assert glob.glob(str(p / '_C*.so')), 'the compiled extension is missing'"
+
+about:
+  homepage: https://github.com/IDEA-Research/GroundingDINO
+  summary: Open-set object detector
+  description: |
+    GroundingDINO marries DINO with grounded pre-training for open-set object
+    detection: it detects objects named by a free-form text prompt rather than
+    by a fixed label set.
+
+    This feedstock publishes the project as several packages.  The Python is
+    identical across all of them; they differ only in whether the
+    `groundingdino._C` deformable-attention extension is present.  Without it
+    the model runs the pure-PyTorch implementation, which is correct but
+    substantially slower, and requires float32 -- `F.grid_sample` has no
+    half-precision CPU kernel.
+  license: Apache-2.0
+  license_file: LICENSE
+  repository: https://github.com/IDEA-Research/GroundingDINO
+
+extra:
+  recipe-maintainers:
+    - giswqs
+    - phreed
+
+# ── Why there is no rocm or vulkan output ─────────────────────────────────────
+#
+# Both were considered and neither can be built from this source today.
+#
+# rocm:    the only HIP reference in the project is setup.py's non-CUDA branch,
+#          which sets define_macros += [("WITH_HIP", None)] and then returns
+#          None before the macro reaches a compiler -- so it is dead code, not a
+#          backend.  csrc/ contains one CUDA kernel (ms_deform_attn_cuda.cu,
+#          plus ms_deform_im2col_cuda.cuh) written against the CUDA runtime.
+#          A rocm output needs that kernel hipified and a HIP build path added
+#          to setup.py.  That is upstream work, and until it lands a rocm output
+#          would ship the pure-Python fallback under a name promising otherwise.
+#
+# vulkan:  there is no Vulkan reference anywhere in the project, and PyTorch's
+#          Vulkan backend does not support custom operators, so there is nothing
+#          for a Vulkan output to compile.  An AMD or Intel GPU user is served
+#          by groundingdino-py-cpu today.
+#

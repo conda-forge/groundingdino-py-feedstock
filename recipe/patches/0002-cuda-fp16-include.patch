@@ -1,0 +1,34 @@
+From d1f31e63603515944144100a1f33e5a4d3f0205e Mon Sep 17 00:00:00 2001
+From: Fredrick Eisele <fred.eisele@vanderbilt.edu>
+Date: Fri, 31 Jul 2026 13:37:11 -0500
+Subject: [PATCH] fix: include cuda_fp16.h in the MsDeformAttn CUDA kernel
+
+The kernel uses half-precision types that recent CUDA toolkits no longer
+pull in transitively, so the extension fails to compile against CUDA 12.
+Include the header explicitly. Also adds the missing trailing newline.
+---
+ .../GroundingDINO/csrc/MsDeformAttn/ms_deform_attn_cuda.cu     | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/groundingdino/models/GroundingDINO/csrc/MsDeformAttn/ms_deform_attn_cuda.cu b/groundingdino/models/GroundingDINO/csrc/MsDeformAttn/ms_deform_attn_cuda.cu
+index d04fae8..6b87846 100644
+--- a/groundingdino/models/GroundingDINO/csrc/MsDeformAttn/ms_deform_attn_cuda.cu
++++ b/groundingdino/models/GroundingDINO/csrc/MsDeformAttn/ms_deform_attn_cuda.cu
+@@ -8,6 +8,7 @@
+ **************************************************************************************************
+ */
+ 
++#include <cuda_fp16.h>
+ #include <vector>
+ #include "ms_deform_im2col_cuda.cuh"
+ 
+@@ -153,4 +154,4 @@ std::vector<at::Tensor> ms_deform_attn_cuda_backward(
+     };
+ }
+ 
+-} // namespace groundingdino
+\ No newline at end of file
++} // namespace groundingdino
+-- 
+2.55.0
+

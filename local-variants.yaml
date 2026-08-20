@@ -1,0 +1,37 @@
+# Local build matrix -- NOT feedstock configuration.
+#
+# This file lives outside `recipe/` on purpose.  Inside it, conda-forge reads it
+# as feedstock config and applies it to every platform, which is wrong: the
+# `c_stdlib_version` below is the Linux sysroot version, and asserting it on
+# macOS puts the recipe under conda-forge's global baseline (11.0) and fails
+# linting.
+#
+# On conda-forge all of these come from the global pinning.  They are declared
+# here only so the recipe can be built outside that infrastructure:
+#
+#   CONDA_OVERRIDE_CUDA=12.1 rattler-build build \
+#     --recipe recipe/recipe.yaml -m local-variants.yaml
+#
+python:
+  - "3.10"
+  - "3.11"
+  - "3.12"
+
+# `noarch: python` outputs build once, against the oldest supported interpreter.
+python_min:
+  - "3.10"
+
+cuda_compiler:
+  - cuda-nvcc
+cuda_compiler_version:
+  - "12.1"
+
+# Linux only, which is the point of keeping this file out of `recipe/`.
+c_compiler:
+  - gcc
+cxx_compiler:
+  - gxx
+c_stdlib:
+  - sysroot
+c_stdlib_version:
+  - "2.17"

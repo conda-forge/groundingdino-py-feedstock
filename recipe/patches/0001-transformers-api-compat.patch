@@ -1,0 +1,52 @@
+From 9bd118796a78473987a64986188d3c7b3ca15121 Mon Sep 17 00:00:00 2001
+From: Fredrick Eisele <fred.eisele@vanderbilt.edu>
+Date: Fri, 31 Jul 2026 13:36:56 -0500
+Subject: [PATCH] fix: restore compatibility with transformers >= 4.49
+
+BertModelWarper copies get_head_mask off the wrapped BERT model, but newer
+transformers releases no longer expose it, so construction raises
+AttributeError. Guard the copy and fall back to a no-op returning None.
+
+get_extended_attention_mask was also being handed the device where it
+expects a dtype. Newer transformers uses that argument to build the mask
+tensor, so passing a device produced a dtype mismatch at inference. Pass
+the dtype of the model weights instead.
+---
+ groundingdino/models/GroundingDINO/bertwarper.py | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/groundingdino/models/GroundingDINO/bertwarper.py b/groundingdino/models/GroundingDINO/bertwarper.py
+index f0cf977..247d919 100644
+--- a/groundingdino/models/GroundingDINO/bertwarper.py
++++ b/groundingdino/models/GroundingDINO/bertwarper.py
+@@ -26,7 +26,13 @@ class BertModelWarper(nn.Module):
+ 
+         self.get_extended_attention_mask = bert_model.get_extended_attention_mask
+         self.invert_attention_mask = bert_model.invert_attention_mask
+-        self.get_head_mask = bert_model.get_head_mask
++        # Check if the attribute exists; if not, set it to a dummy function or None
++        if hasattr(bert_model, "get_head_mask"):
++           self.get_head_mask = bert_model.get_head_mask
++        else:
++           # Newer transformers versions might not have this, 
++           # but GroundingDINO's forward pass might call it.
++           self.get_head_mask = lambda x, y: None
+ 
+     def forward(
+         self,
+@@ -106,8 +112,11 @@ class BertModelWarper(nn.Module):
+ 
+         # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
+         # ourselves in which case we just need to make it broadcastable to all heads.
++        # Pass the dtype of the model weights instead of the device object
++        model_dtype = next(self.parameters()).dtype
++        
+         extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(
+-            attention_mask, input_shape, device
++            attention_mask, input_shape, model_dtype
+         )
+ 
+         # If a 2D or 3D attention mask is provided for the cross-attention
+-- 
+2.55.0
+

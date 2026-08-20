@@ -1,0 +1,22 @@
+From 383fceb1d618ba3b4a24e712033103341025a713 Mon Sep 17 00:00:00 2001
+From: Fredrick Eisele <fred.eisele@vanderbilt.edu>
+Date: Fri, 31 Jul 2026 13:37:12 -0500
+Subject: [PATCH] feat: expose __version__ on the groundingdino package
+
+Packaging the project for conda requires a version attribute that build
+tooling and downstream code can read at runtime.
+---
+ groundingdino/version.py | 1 +
+ 1 file changed, 1 insertion(+)
+ create mode 100644 groundingdino/version.py
+
+diff --git a/groundingdino/version.py b/groundingdino/version.py
+new file mode 100644
+index 0000000..b794fd4
+--- /dev/null
++++ b/groundingdino/version.py
+@@ -0,0 +1 @@
++__version__ = '0.1.0'
+-- 
+2.55.0
+
