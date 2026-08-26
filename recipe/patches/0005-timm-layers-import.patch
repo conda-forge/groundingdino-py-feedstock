@@ -1,0 +1,45 @@
+From 2f1443590e4c48d84f2e5cd2086195d3f26e6cef Mon Sep 17 00:00:00 2001
+From: Fredrick Eisele <fred.eisele@vanderbilt.edu>
+Date: Tue, 25 Aug 2026 14:11:14 -0500
+Subject: [PATCH] fix: import DropPath and friends from timm.layers
+
+timm moved its layer primitives from `timm.models.layers` to `timm.layers`
+in 0.9.0. The old path survives only as a shim that emits
+
+  FutureWarning: Importing from timm.models.layers is deprecated,
+  please import via timm.layers
+
+on every import of groundingdino, and it is scheduled to go away. The names
+imported here -- DropPath, to_2tuple, trunc_normal_ -- are re-exported
+unchanged from the new location, so this is a rename and nothing more.
+---
+ groundingdino/models/GroundingDINO/backbone/swin_transformer.py | 2 +-
+ groundingdino/models/GroundingDINO/fuse_modules.py              | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/groundingdino/models/GroundingDINO/backbone/swin_transformer.py b/groundingdino/models/GroundingDINO/backbone/swin_transformer.py
+index 1c66194..e335ae0 100644
+--- a/groundingdino/models/GroundingDINO/backbone/swin_transformer.py
++++ b/groundingdino/models/GroundingDINO/backbone/swin_transformer.py
+@@ -16,7 +16,7 @@ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+ import torch.utils.checkpoint as checkpoint
+-from timm.models.layers import DropPath, to_2tuple, trunc_normal_
++from timm.layers import DropPath, to_2tuple, trunc_normal_
+ 
+ from groundingdino.util.misc import NestedTensor
+ 
+diff --git a/groundingdino/models/GroundingDINO/fuse_modules.py b/groundingdino/models/GroundingDINO/fuse_modules.py
+index 2753b3d..a5d428c 100644
+--- a/groundingdino/models/GroundingDINO/fuse_modules.py
++++ b/groundingdino/models/GroundingDINO/fuse_modules.py
+@@ -8,7 +8,7 @@
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from timm.models.layers import DropPath
++from timm.layers import DropPath
+ 
+ 
+ class FeatureResizer(nn.Module):

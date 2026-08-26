@@ -1,0 +1,29 @@
+From 6da4eee3a3c4e3e98a156176d709eee27978b912 Mon Sep 17 00:00:00 2001
+From: Fredrick Eisele <fred.eisele@vanderbilt.edu>
+Date: Tue, 25 Aug 2026 14:11:58 -0500
+Subject: [PATCH] fix: drop the verify argument removed from yapf's FormatCode
+
+yapf 0.40.0 removed the `verify` parameter, so SLConfig.pretty_text raises
+
+  TypeError: FormatCode() got an unexpected keyword argument 'verify'
+
+against any yapf a current environment would install. `verify` re-parsed the
+formatted output as a sanity check on yapf itself; it had defaulted to False
+for releases before it was dropped, so nothing here relied on it.
+---
+ groundingdino/util/slconfig.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/groundingdino/util/slconfig.py b/groundingdino/util/slconfig.py
+index 672e72e..a33832d 100644
+--- a/groundingdino/util/slconfig.py
++++ b/groundingdino/util/slconfig.py
+@@ -303,7 +303,7 @@ class SLConfig(object):
+             blank_line_before_nested_class_or_def=True,
+             split_before_expression_after_opening_paren=True,
+         )
+-        text, _ = FormatCode(text, style_config=yapf_style, verify=True)
++        text, _ = FormatCode(text, style_config=yapf_style)
+ 
+         return text
+ 

@@ -1,0 +1,124 @@
+From ae742a89f22278d4bfe289a7d2769845a7736b28 Mon Sep 17 00:00:00 2001
+From: Fredrick Eisele <fred.eisele@vanderbilt.edu>
+Date: Tue, 25 Aug 2026 14:11:35 -0500
+Subject: [PATCH] fix: stop calling PyTorch APIs that current releases have
+ deprecated
+
+Three separate deprecations, all of which fire on an ordinary inference run
+and one of which is announced as a hard error.
+
+torch.meshgrid without `indexing`
+    UserWarning: torch.meshgrid: in an upcoming release, it will be
+    required to pass the indexing argument.
+  The historical default is "ij", so passing it explicitly changes nothing
+  today and keeps the four call sites correct when the default flips.
+
+torch.cuda.amp.autocast
+    FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated.
+    Please use `torch.amp.autocast('cuda', args...)` instead.
+  The device-generic spelling has been available since 1.10.
+
+torch.utils.checkpoint.checkpoint without `use_reentrant`
+    UserWarning: torch.utils.checkpoint: the use_reentrant parameter
+    should be passed explicitly. Starting in PyTorch 2.9, calling
+    checkpoint without use_reentrant will raise an exception.
+  use_reentrant=False is the variant PyTorch recommends and the one that
+  will become the default. It is also the one that behaves correctly here:
+  the reentrant implementation additionally warns
+
+    UserWarning: None of the inputs have requires_grad=True.
+    Gradients will be None
+
+  during inference, because it cannot checkpoint a graph it is not
+  building. The non-reentrant implementation has no such restriction.
+---
+ .../models/GroundingDINO/backbone/swin_transformer.py        | 4 ++--
+ groundingdino/models/GroundingDINO/transformer.py            | 5 ++++-
+ groundingdino/models/GroundingDINO/utils.py                  | 1 +
+ groundingdino/util/box_ops.py                                | 2 +-
+ 4 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/groundingdino/models/GroundingDINO/backbone/swin_transformer.py b/groundingdino/models/GroundingDINO/backbone/swin_transformer.py
+index e335ae0..cdaac63 100644
+--- a/groundingdino/models/GroundingDINO/backbone/swin_transformer.py
++++ b/groundingdino/models/GroundingDINO/backbone/swin_transformer.py
+@@ -113,7 +113,7 @@ class WindowAttention(nn.Module):
+         # get pair-wise relative position index for each token inside the window
+         coords_h = torch.arange(self.window_size[0])
+         coords_w = torch.arange(self.window_size[1])
+-        coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
++        coords = torch.stack(torch.meshgrid([coords_h, coords_w], indexing="ij"))  # 2, Wh, Ww
+         coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
+         relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # 2, Wh*Ww, Wh*Ww
+         relative_coords = relative_coords.permute(1, 2, 0).contiguous()  # Wh*Ww, Wh*Ww, 2
+@@ -445,7 +445,7 @@ class BasicLayer(nn.Module):
+         for blk in self.blocks:
+             blk.H, blk.W = H, W
+             if self.use_checkpoint:
+-                x = checkpoint.checkpoint(blk, x, attn_mask)
++                x = checkpoint.checkpoint(blk, x, attn_mask, use_reentrant=False)
+             else:
+                 x = blk(x, attn_mask)
+         if self.downsample is not None:
+diff --git a/groundingdino/models/GroundingDINO/transformer.py b/groundingdino/models/GroundingDINO/transformer.py
+index fcb8742..bc480ab 100644
+--- a/groundingdino/models/GroundingDINO/transformer.py
++++ b/groundingdino/models/GroundingDINO/transformer.py
+@@ -470,6 +470,7 @@ class TransformerEncoder(nn.Module):
+             ref_y, ref_x = torch.meshgrid(
+                 torch.linspace(0.5, H_ - 0.5, H_, dtype=torch.float32, device=device),
+                 torch.linspace(0.5, W_ - 0.5, W_, dtype=torch.float32, device=device),
++                indexing="ij",
+             )
+             ref_y = ref_y.reshape(-1)[None] / (valid_ratios[:, None, lvl, 1] * H_)
+             ref_x = ref_x.reshape(-1)[None] / (valid_ratios[:, None, lvl, 0] * W_)
+@@ -554,6 +555,7 @@ class TransformerEncoder(nn.Module):
+                         memory_text,
+                         key_padding_mask,
+                         text_attention_mask,
++                        use_reentrant=False,
+                     )
+                 else:
+                     output, memory_text = self.fusion_layers[layer_id](
+@@ -581,6 +583,7 @@ class TransformerEncoder(nn.Module):
+                     spatial_shapes,
+                     level_start_index,
+                     key_padding_mask,
++                    use_reentrant=False,
+                 )
+             else:
+                 output = layer(
+@@ -859,7 +862,7 @@ class DeformableTransformerDecoderLayer(nn.Module):
+         return tensor if pos is None else tensor + pos
+ 
+     def forward_ffn(self, tgt):
+-        with torch.cuda.amp.autocast(enabled=False):
++        with torch.amp.autocast("cuda", enabled=False):
+             tgt2 = self.linear2(self.dropout3(self.activation(self.linear1(tgt))))
+         tgt = tgt + self.dropout4(tgt2)
+         tgt = self.norm3(tgt)
+diff --git a/groundingdino/models/GroundingDINO/utils.py b/groundingdino/models/GroundingDINO/utils.py
+index 5bd18f7..9c5653f 100644
+--- a/groundingdino/models/GroundingDINO/utils.py
++++ b/groundingdino/models/GroundingDINO/utils.py
+@@ -79,6 +79,7 @@ def gen_encoder_output_proposals(
+         grid_y, grid_x = torch.meshgrid(
+             torch.linspace(0, H_ - 1, H_, dtype=torch.float32, device=memory.device),
+             torch.linspace(0, W_ - 1, W_, dtype=torch.float32, device=memory.device),
++            indexing="ij",
+         )
+         grid = torch.cat([grid_x.unsqueeze(-1), grid_y.unsqueeze(-1)], -1)  # H_, W_, 2
+ 
+diff --git a/groundingdino/util/box_ops.py b/groundingdino/util/box_ops.py
+index 781068d..6159e75 100644
+--- a/groundingdino/util/box_ops.py
++++ b/groundingdino/util/box_ops.py
+@@ -118,7 +118,7 @@ def masks_to_boxes(masks):
+ 
+     y = torch.arange(0, h, dtype=torch.float)
+     x = torch.arange(0, w, dtype=torch.float)
+-    y, x = torch.meshgrid(y, x)
++    y, x = torch.meshgrid(y, x, indexing="ij")
+ 
+     x_mask = masks * x.unsqueeze(0)
+     x_max = x_mask.flatten(1).max(-1)[0]

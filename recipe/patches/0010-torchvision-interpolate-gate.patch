@@ -1,0 +1,54 @@
+From 9e13f8e6b2db7ef25c8b1b91a5986df8653c88d3 Mon Sep 17 00:00:00 2001
+From: Fredrick Eisele <fred.eisele@vanderbilt.edu>
+Date: Tue, 25 Aug 2026 14:12:23 -0500
+Subject: [PATCH] fix: repair the torchvision version gate around
+ misc.interpolate
+
+util.misc.interpolate fails on an empty input against every torchvision
+released in the last five years:
+
+  NameError: name '_output_size' is not defined
+
+Two independent faults, each masking the other until the input is empty.
+
+The gate is a bool, and it is compared against a float. `False < 0.7` is
+True, so `interpolate` always takes the branch written for torchvision < 0.7
+-- the branch whose helpers, `_output_size` and `_new_empty_tensor`, were only
+imported when the flag was True, and which torchvision has since removed
+anyway. A non-empty input returns from that branch before touching either
+name, which is why this has gone unnoticed: only the empty-input path, the
+one the shim exists for, reaches the undefined names. Testing the flag
+directly sends current torchvision to torchvision.ops.misc.interpolate, which
+handles empty inputs and is what the else branch was already there to call.
+
+The flag itself is computed by float()ing the minor version alone, so it also
+reads any future 1.x torchvision as older than 0.7. Compare the (major, minor)
+pair instead, and strip the local version segment that CUDA builds append.
+---
+ groundingdino/util/misc.py | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/groundingdino/util/misc.py b/groundingdino/util/misc.py
+index bc7a1f3..761a54a 100644
+--- a/groundingdino/util/misc.py
++++ b/groundingdino/util/misc.py
+@@ -24,7 +24,9 @@ import torch.distributed as dist
+ import torchvision
+ from torch import Tensor
+ 
+-__torchvision_need_compat_flag = float(torchvision.__version__.split(".")[1]) < 7
++__torchvision_need_compat_flag = tuple(
++    int(part) for part in torchvision.__version__.split("+")[0].split(".")[:2]
++) < (0, 7)
+ if __torchvision_need_compat_flag:
+     from torchvision.ops import _new_empty_tensor
+     from torchvision.ops.misc import _output_size
+@@ -675,7 +677,7 @@ def interpolate(input, size=None, scale_factor=None, mode="nearest", align_corne
+     This will eventually be supported natively by PyTorch, and this
+     class can go away.
+     """
+-    if __torchvision_need_compat_flag < 0.7:
++    if __torchvision_need_compat_flag:
+         if input.numel() > 0:
+             return torch.nn.functional.interpolate(input, size, scale_factor, mode, align_corners)
+ 

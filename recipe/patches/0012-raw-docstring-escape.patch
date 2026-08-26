@@ -1,0 +1,30 @@
+From 41532de74116b56c37966afb6d6090eb55f0442a Mon Sep 17 00:00:00 2001
+From: Fredrick Eisele <fred.eisele@vanderbilt.edu>
+Date: Tue, 25 Aug 2026 14:13:59 -0500
+Subject: [PATCH] fix: mark the docstring containing \sum as raw
+
+Python 3.12 promoted unrecognised backslash escapes in string literals from
+DeprecationWarning to SyntaxWarning, so importing this module now prints
+
+  SyntaxWarning: invalid escape sequence '\s'
+
+and a future release makes it a SyntaxError. The four `\sum{hw}` in this
+docstring are TeX, not escapes. An r-prefix leaves the text exactly as
+written and as displayed by help().
+---
+ groundingdino/models/GroundingDINO/utils.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/groundingdino/models/GroundingDINO/utils.py b/groundingdino/models/GroundingDINO/utils.py
+index 9c5653f..771492e 100644
+--- a/groundingdino/models/GroundingDINO/utils.py
++++ b/groundingdino/models/GroundingDINO/utils.py
+@@ -56,7 +56,7 @@ def get_sine_pos_embed(
+ def gen_encoder_output_proposals(
+     memory: Tensor, memory_padding_mask: Tensor, spatial_shapes: Tensor, learnedwh=None
+ ):
+-    """
++    r"""
+     Input:
+         - memory: bs, \sum{hw}, d_model
+         - memory_padding_mask: bs, \sum{hw}

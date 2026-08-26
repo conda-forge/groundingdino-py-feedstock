@@ -1,0 +1,41 @@
+From a59dcae834f1238453e78099d6cc60fedbae6c75 Mon Sep 17 00:00:00 2001
+From: Fredrick Eisele <fred.eisele@vanderbilt.edu>
+Date: Tue, 25 Aug 2026 14:12:33 -0500
+Subject: [PATCH] build: declare the dependency floors the code actually
+ requires
+
+requirements.txt names ten packages and constrains one of them, so a fresh
+`pip install -r` is free to resolve to versions the source does not run
+against. The three floors added here are the ones the code now depends on by
+name:
+
+  torch>=1.13          torch.load's weights_only argument
+  transformers>=4.49.0 BertModel without get_head_mask; the dtype argument
+                       to get_extended_attention_mask
+  timm>=0.9.0          timm.layers, which is where the layer primitives
+                       moved to
+
+These are minimums for the code as written, not recommendations -- every one
+of them is years old, and each corresponds to a call this project makes
+unconditionally. The remaining packages are left unpinned, as they were.
+---
+ requirements.txt | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/requirements.txt b/requirements.txt
+index 24aa11d..5b502ec 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,9 +1,9 @@
+-torch
++torch>=1.13
+ torchvision
+-transformers
++transformers>=4.49.0
+ addict
+ yapf
+-timm
++timm>=0.9.0
+ numpy
+ opencv-python
+ supervision>=0.22.0

@@ -1,0 +1,63 @@
+From 86a2e60bba6867bf65f11fbbe663f781cbfbdc65 Mon Sep 17 00:00:00 2001
+From: Fredrick Eisele <fred.eisele@vanderbilt.edu>
+Date: Tue, 25 Aug 2026 14:11:51 -0500
+Subject: [PATCH] fix: pass weights_only=False to the two torch.load calls that
+ need it
+
+PyTorch 2.6 changed the default of `torch.load`'s `weights_only` argument
+from False to True. Both call sites here load something the restricted
+unpickler refuses, so both break on any current PyTorch.
+
+util/inference.py loads a released GroundingDINO checkpoint, which is a full
+pickle rather than a bare state dict:
+
+  _pickle.UnpicklingError: Weights only load failed. [...]
+  WeightsUnpickler error: Unsupported global: GLOBAL argparse.Namespace was
+  not an allowed global by default.
+
+util/misc.py deserializes whatever the ranks passed to all_gather, which is
+documented as "arbitrary picklable data" -- restricting it is not an option.
+
+weights_only=False restores the previous behaviour and, with it, the previous
+exposure: loading a checkpoint runs code from the checkpoint. That was always
+true of these two functions; it is now spelled out at the call site rather
+than left to the default. Allowlisting globals instead would not help, since
+neither call knows what it is about to read.
+---
+ groundingdino/util/inference.py | 7 ++++++-
+ groundingdino/util/misc.py      | 4 +++-
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/groundingdino/util/inference.py b/groundingdino/util/inference.py
+index 84a962e..9ad33c5 100644
+--- a/groundingdino/util/inference.py
++++ b/groundingdino/util/inference.py
+@@ -30,7 +30,12 @@ def load_model(model_config_path: str, model_checkpoint_path: str, device: str =
+     args = SLConfig.fromfile(model_config_path)
+     args.device = device
+     model = build_model(args)
+-    checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
++    # weights_only defaults to True from PyTorch 2.6 on, and the released
++    # GroundingDINO checkpoints are full pickles -- they carry the training
++    # args alongside the tensors -- so the restricted unpickler rejects them.
++    # Loading one executes code from the file: treat a checkpoint the same way
++    # you would treat any other executable you downloaded.
++    checkpoint = torch.load(model_checkpoint_path, map_location="cpu", weights_only=False)
+     model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
+     model.eval()
+     return model
+diff --git a/groundingdino/util/misc.py b/groundingdino/util/misc.py
+index d64b84e..bc7a1f3 100644
+--- a/groundingdino/util/misc.py
++++ b/groundingdino/util/misc.py
+@@ -164,7 +164,9 @@ def all_gather_cpu(data):
+     for size, tensor in zip(size_list, tensor_list):
+         tensor = torch.split(tensor, [size, max_size - size], dim=0)[0]
+         buffer = io.BytesIO(tensor.cpu().numpy())
+-        obj = torch.load(buffer)
++        # Arbitrary picklable objects by construction -- see the docstring of
++        # all_gather below -- so the restricted unpickler cannot be used here.
++        obj = torch.load(buffer, weights_only=False)
+         data_list.append(obj)
+ 
+     return data_list

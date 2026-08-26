@@ -1,0 +1,39 @@
+From 9aa0aafb2d1623e2b480b35307373bc3f34ee90c Mon Sep 17 00:00:00 2001
+From: Di Yao <di.yao@vanderbilt.edu>
+Date: Wed, 26 Aug 2026 09:40:00 -0500
+Subject: [PATCH] fix: pass the model dtype to get_extended_attention_mask by
+ keyword
+
+0001 meant to hand this call the dtype of the model weights rather than the
+device object, but left the value in the third positional slot, and the
+signature is get_extended_attention_mask(attention_mask, input_shape, device,
+dtype). The dtype lands in `device`, so every forward pass prints
+
+  FutureWarning: The `device` argument is deprecated and will be removed in
+  v5 of Transformers.
+
+The mask came out right regardless. The text encoder has is_decoder=False, so
+transformers never reads `device`, and dtype=None falls back to self.dtype,
+which is already next(self.parameters()).dtype. Naming the argument costs
+nothing, makes the call do what 0001 said it did, and takes it off the list of
+things v5 removes.
+---
+ groundingdino/models/GroundingDINO/bertwarper.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/groundingdino/models/GroundingDINO/bertwarper.py b/groundingdino/models/GroundingDINO/bertwarper.py
+index 045b44d..b016240 100644
+--- a/groundingdino/models/GroundingDINO/bertwarper.py
++++ b/groundingdino/models/GroundingDINO/bertwarper.py
+@@ -116,7 +116,7 @@ class BertModelWarper(nn.Module):
+         model_dtype = next(self.parameters()).dtype
+         
+         extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(
+-            attention_mask, input_shape, model_dtype
++            attention_mask, input_shape, dtype=model_dtype
+         )
+ 
+         # If a 2D or 3D attention mask is provided for the cross-attention
+-- 
+2.34.1
+

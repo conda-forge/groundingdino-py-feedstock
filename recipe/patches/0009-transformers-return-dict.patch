@@ -1,0 +1,33 @@
+From 17d48e800712e647c488c02f984f66562c534ee6 Mon Sep 17 00:00:00 2001
+From: Fredrick Eisele <fred.eisele@vanderbilt.edu>
+Date: Tue, 25 Aug 2026 14:12:05 -0500
+Subject: [PATCH] fix: read config.return_dict rather than the deprecated
+ use_return_dict
+
+BertModelWarper.forward consults PretrainedConfig.use_return_dict, which in
+transformers 5.x logs
+
+  [transformers] `use_return_dict` is deprecated! Use `return_dict` instead!
+
+and does nothing but return self.return_dict. The two differed only in that
+use_return_dict also disabled dict returns under config.torchscript, and
+torchscript is itself gone from PretrainedConfig -- so the property has no
+behaviour left to preserve. config.return_dict has been present since
+transformers 3.1, which is far below anything this project supports.
+---
+ groundingdino/models/GroundingDINO/bertwarper.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/groundingdino/models/GroundingDINO/bertwarper.py b/groundingdino/models/GroundingDINO/bertwarper.py
+index 247d919..045b44d 100644
+--- a/groundingdino/models/GroundingDINO/bertwarper.py
++++ b/groundingdino/models/GroundingDINO/bertwarper.py
+@@ -78,7 +78,7 @@ class BertModelWarper(nn.Module):
+             if output_hidden_states is not None
+             else self.config.output_hidden_states
+         )
+-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
++        return_dict = return_dict if return_dict is not None else self.config.return_dict
+ 
+         if self.config.is_decoder:
+             use_cache = use_cache if use_cache is not None else self.config.use_cache

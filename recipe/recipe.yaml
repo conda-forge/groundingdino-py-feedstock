@@ -26,7 +26,7 @@ schema_version: 1
 
 context:
   name: groundingdino-py
-  version: "0.4.1"
+  version: "0.4.2"
   # Upstream's own tree, not the PyPI sdist.
   # The sdist ships no `csrc/`,
   # so the CUDA extension cannot be built from it at all --
@@ -48,10 +48,11 @@ source:
   - url: https://github.com/IDEA-Research/GroundingDINO/archive/${{ commit }}.tar.gz
     sha256: 37b98b28341f95d1283631570c56b5ed3c92ea4af9717045f55f5045ca6fb2a0
     # Fixes submitted upstream and not yet merged.  Carried here rather than
-    # waiting, because two of the three are load-bearing for this feedstock:
-    # without 0002 the CUDA extension does not compile under CUDA 12 at all, and
-    # without 0003 there is no version for packaging to read.  Drop each patch as
-    # its pull request lands.
+    # waiting, because several are load-bearing for this feedstock: without 0002
+    # the CUDA extension does not compile under CUDA 12 at all, without 0003
+    # there is no version for packaging to read, and without 0007 and 0008 the
+    # package does not run against the pytorch and yapf it is built against.
+    # Drop each patch as its pull request lands.
     #
     #   0001  IDEA-Research/GroundingDINO#458  transformers >= 4.49 compatibility
     #   0002  IDEA-Research/GroundingDINO#459  cuda_fp16.h include, fixes CUDA 12
@@ -60,20 +61,74 @@ source:
     #                                          no longer converts, so the kernel
     #                                          does not compile under CUDA 12.9
     #
+    # 0005 through 0012 are one dependency each.  The source was last touched
+    # upstream against a stack that has since moved, so nothing here is a change
+    # of behaviour -- each is the current spelling of a call the project already
+    # makes.  Broken today, in the order a user meets them:
+    #
+    #   0008  yapf >= 0.40 removed FormatCode's `verify`, so
+    #         SLConfig.pretty_text raises TypeError
+    #   0007  pytorch >= 2.6 defaults torch.load to weights_only=True, so
+    #         load_model cannot read a released checkpoint
+    #   0010  the torchvision version gate compares a bool against a float and
+    #         always loses, so util.misc.interpolate raises NameError on the
+    #         empty input the shim exists to handle
+    #
+    # Deprecated, still working, and announced for removal:
+    #
+    #   0005  timm >= 0.9 moved the layer primitives to timm.layers
+    #   0006  pytorch: torch.meshgrid's indexing argument, torch.amp.autocast,
+    #         and checkpoint's use_reentrant -- the last of which PyTorch says
+    #         becomes an error
+    #   0009  transformers: config.use_return_dict -> config.return_dict
+    #   0012  python >= 3.12 raises SyntaxWarning, and will raise SyntaxError,
+    #         for the \sum in a non-raw docstring
+    #   0013  transformers: get_extended_attention_mask's `device` argument,
+    #         which 0001 fills by mistake and v5 removes
+    #
+    # And 0011 records in requirements.txt the floors the above imply.  It
+    # changes nothing for this feedstock, whose dependencies are declared below;
+    # it is carried so the patch set stands on its own upstream.
+    #
     # IDEA-Research/GroundingDINO#461 is deliberately *not* carried.  It extends
     # the SwinB config with training parameters, which is a proposal rather than
     # a fix, and no consumer of this package needs it: the configs are read from
     # disk by path, so a project wanting tuned ones ships its own.
+    #
+    # transformers' get_extended_attention_mask, which bertwarper.py calls, is
+    # also deprecated -- but its replacement, transformers.masking_utils, does
+    # not exist in the 4.x this recipe still allows, and the hunk of 0001 that
+    # fixed the dtype argument to that same call would have to go with it.  Left
+    # alone until the floor moves to transformers 5.
+    #
+    # 0013 is a second deprecation on that same call rather than a step toward
+    # the migration above.  It names the `dtype` argument that 0001 passes
+    # positionally into `device`; the method stays, only the stray argument
+    # goes.
     patches:
       - patches/0001-transformers-api-compat.patch
       - patches/0002-cuda-fp16-include.patch
       - patches/0003-version-attribute.patch
       - patches/0004-aten-deprecated-type.patch
+      - patches/0005-timm-layers-import.patch
+      - patches/0006-torch-deprecated-apis.patch
+      - patches/0007-torch-load-weights-only.patch
+      - patches/0008-yapf-format-code-verify.patch
+      - patches/0009-transformers-return-dict.patch
+      - patches/0010-torchvision-interpolate-gate.patch
+      - patches/0011-requirements-floors.patch
+      - patches/0012-raw-docstring-escape.patch
+      - patches/0013-bertwarper-dtype-keyword.patch
 
 build:
-  # The recipe-wide build number.  Each output may override it; none do, so
-  # bumping here bumps all of them together, which is what a rebuild against new
-  # pinnings wants.
+  # The recipe-wide build number.  Both outputs restate it below, so all three
+  # move together; bumping only this one would leave the outputs behind.
+  #
+  # 1: patches 0005-0012, which bring the source up to the dependency versions
+  #    conda-forge now resolves.  0.4.1 build 0 is published and its contents
+  #    differ, so the number has to move even though the version does not.
+  # 2: patch 0013, the last of the deprecation warnings a run printed before
+  #    its first frame.
   number: 0
 
 outputs:
@@ -117,8 +172,13 @@ outputs:
         - pycocotools
         - transformers >=4.49.0
         - addict
+        # yapf 0.40 removed FormatCode's `verify` argument; patch 0008 stops
+        # passing it, which works on either side of that release, so yapf needs
+        # no floor of its own.
         - yapf
-        - timm
+        # timm.layers, where patch 0005 imports the layer primitives from,
+        # arrived in 0.9.0.
+        - timm >=0.9.0
 
     tests:
       - python:
