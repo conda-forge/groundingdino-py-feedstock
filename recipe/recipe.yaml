@@ -201,7 +201,11 @@ outputs:
 
     build:
       number: 0
-      string: cuda${{ cuda_compiler_version | default("None") | replace(".", "") }}_py${{ python | replace(".", "") }}_h${{ hash }}_${{ build_number }}
+      # `python` arrives from conda-forge's pinning as "3.11.* *_cpython" --
+      # a space and a `*` that `replace(".", "")` used to leak into the
+      # build string, and so the filename.  version_to_buildstring reduces
+      # it to the major/minor digits ("311").
+      string: cuda${{ cuda_compiler_version | default("None") | replace(".", "") }}_py${{ python | version_to_buildstring }}_h${{ hash }}_${{ build_number }}
       skip:
         # `undefined` and `"None"` both mean "no CUDA on this platform", and they
         # are not interchangeable: conda-forge's pinning omits the key entirely
